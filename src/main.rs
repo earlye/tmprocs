@@ -142,6 +142,12 @@ fn tui_loop(
                         }
                         terminal.clear()?;
                     }
+                    (_, KeyCode::Char('r')) => {
+                        if let Err(e) = app.force_restart_selected() {
+                            eprintln!("error restarting proc: {e}");
+                        }
+                        terminal.clear()?;
+                    }
                     (_, KeyCode::Char('x')) => {
                         if let Err(e) = app.kill_selected() {
                             eprintln!("error killing proc: {e}");
