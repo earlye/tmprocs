@@ -62,7 +62,7 @@ fn draw_proc_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) -> 
 }
 
 fn draw_help_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
-    let help = Paragraph::new("↑/k up  ↓/j down  Enter focus  s start  x kill  q quit")
+    let help = Paragraph::new("↑/k up  ↓/j down  Enter focus  s start  r restart  x kill  q quit")
         .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, area);
 }

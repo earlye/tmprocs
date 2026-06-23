@@ -108,16 +108,25 @@ impl App {
 
     /// Restart the selected process if it is dead.
     pub fn restart_selected(&mut self) -> Result<()> {
-        let idx = self.selected;
-        if self.procs[idx].status != ProcStatus::Dead {
+        if self.procs[self.selected].status != ProcStatus::Dead {
             return Ok(());
         }
+        self.do_restart_selected()
+    }
+
+    /// Restart the selected process regardless of its current status.
+    pub fn force_restart_selected(&mut self) -> Result<()> {
+        self.do_restart_selected()
+    }
+
+    fn do_restart_selected(&mut self) -> Result<()> {
+        let idx = self.selected;
         let name = self.procs[idx].name.clone();
         let cmd = self.procs[idx].cmd.clone();
 
         if self.procs[idx].is_shown {
             if let Some(right_id) = self.right_pane_id.take() {
-                // Chain: kill dead pane → new-window → join → resize, all in one invocation.
+                // Chain: kill pane → new-window → join → resize, all in one invocation.
                 let window_name = self.bg_session.window_name_for(&name);
                 let wrapper_cmd = self.bg_session.wrapper_cmd_for(&name, &cmd)?;
                 match tmux::restart_shown_proc_pane(
