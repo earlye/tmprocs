@@ -67,10 +67,10 @@ impl App {
                 .as_deref()
                 .map(tmux::is_pane_alive)
                 .unwrap_or(false);
-            let result = if let (Some(right_id), true) = (right_id, alive) {
+            let result = if alive {
                 let shown_name = self.procs[shown_idx].name.clone();
                 tmux::swap_proc_pane(
-                    &right_id,
+                    right_id.as_deref().unwrap_or(""),
                     &self.bg_session.session_name,
                     &self.bg_session.window_name_for(&shown_name),
                     &window,
@@ -78,6 +78,10 @@ impl App {
                     Some(50),
                 )
             } else {
+                // Dead or missing pane: kill it so it doesn't orphan in the window.
+                if let Some(ref dead_id) = right_id {
+                    let _ = tmux::kill_pane(dead_id);
+                }
                 tmux::join_pane_right(&window, &self.left_pane_id, Some(50))
             };
             match result {
