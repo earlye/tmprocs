@@ -24,8 +24,8 @@ impl ProcConfig {
 }
 
 pub fn load(path: &Path) -> Result<Config> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_yaml::from_str(&text).context("parsing config")
 }
 

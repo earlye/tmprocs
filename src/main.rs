@@ -3,14 +3,14 @@ mod config;
 mod tmux;
 mod ui;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use app::{App, Proc, ProcStatus};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::Duration;
 
@@ -18,8 +18,12 @@ fn main() -> Result<()> {
     // Wrapper subcommand: tmprocs wrap <status_file> <shell_cmd>
     let cli_args: Vec<String> = std::env::args().collect();
     if cli_args.get(1).map(|s| s.as_str()) == Some("wrap") {
-        let status_file = cli_args.get(2).ok_or_else(|| anyhow::anyhow!("wrap: missing status file"))?;
-        let shell_cmd = cli_args.get(3).ok_or_else(|| anyhow::anyhow!("wrap: missing command"))?;
+        let status_file = cli_args
+            .get(2)
+            .ok_or_else(|| anyhow::anyhow!("wrap: missing status file"))?;
+        let shell_cmd = cli_args
+            .get(3)
+            .ok_or_else(|| anyhow::anyhow!("wrap: missing command"))?;
         return run_wrapper(status_file, shell_cmd);
     }
     // Must be inside tmux.
@@ -85,51 +89,66 @@ fn run_tui(app: &mut App) -> Result<()> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let tick = Duration::from_millis(1000);
 
+    let result = tui_loop(app, &mut terminal);
+
+    // Always restore the terminal, even if the loop errored.
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    );
+    let _ = terminal.show_cursor();
+    result
+}
+
+fn tui_loop(
+    app: &mut App,
+    terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>,
+) -> Result<()> {
+    let tick = Duration::from_millis(1000);
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
 
         if event::poll(tick)? {
             match event::read()? {
-                Event::Key(key) => {
-                    match (key.modifiers, key.code) {
-                        (_, KeyCode::Char('q')) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-                            app.should_quit = true;
-                        }
-                        (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
-                            app.move_up();
-                            if let Err(e) = app.show_selected() {
-                                eprintln!("error showing proc: {e}");
-                            }
-                            terminal.clear()?;
-                        }
-                        (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
-                            app.move_down();
-                            if let Err(e) = app.show_selected() {
-                                eprintln!("error showing proc: {e}");
-                            }
-                            terminal.clear()?;
-                        }
-                        (_, KeyCode::Enter) => {
-                            if let Some(ref pane_id) = app.right_pane_id.clone() {
-                                let _ = tmux::focus_pane(pane_id);
-                            }
-                        }
-                        (_, KeyCode::Char('s')) => {
-                            if let Err(e) = app.restart_selected() {
-                                eprintln!("error restarting proc: {e}");
-                            }
-                            terminal.clear()?;
-                        }
-                        (_, KeyCode::Char('x')) => {
-                            if let Err(e) = app.kill_selected() {
-                                eprintln!("error killing proc: {e}");
-                            }
-                        }
-                        _ => {}
+                Event::Key(key) => match (key.modifiers, key.code) {
+                    (_, KeyCode::Char('q')) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+                        app.should_quit = true;
                     }
-                }
+                    (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
+                        app.move_up();
+                        if let Err(e) = app.show_selected() {
+                            eprintln!("error showing proc: {e}");
+                        }
+                        terminal.clear()?;
+                    }
+                    (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
+                        app.move_down();
+                        if let Err(e) = app.show_selected() {
+                            eprintln!("error showing proc: {e}");
+                        }
+                        terminal.clear()?;
+                    }
+                    (_, KeyCode::Enter) => {
+                        if let Some(ref pane_id) = app.right_pane_id.clone() {
+                            let _ = tmux::focus_pane(pane_id);
+                        }
+                    }
+                    (_, KeyCode::Char('s')) => {
+                        if let Err(e) = app.restart_selected() {
+                            eprintln!("error restarting proc: {e}");
+                        }
+                        terminal.clear()?;
+                    }
+                    (_, KeyCode::Char('x')) => {
+                        if let Err(e) = app.kill_selected() {
+                            eprintln!("error killing proc: {e}");
+                        }
+                    }
+                    _ => {}
+                },
                 Event::Resize(_, _) => {
                     terminal.clear()?;
                 }
@@ -143,14 +162,6 @@ fn run_tui(app: &mut App) -> Result<()> {
             break;
         }
     }
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
     Ok(())
 }
 
@@ -186,7 +197,11 @@ fn run_wrapper(status_file: &str, shell_cmd: &str) -> Result<()> {
                 Ok(Some(status)) => {
                     let code = status.code().unwrap_or(-1);
                     let _ = std::fs::write(status_file, format!("dead:{code}"));
-                    let msg = if code == 0 { "success".to_string() } else { format!("code {code}") };
+                    let msg = if code == 0 {
+                        "success".to_string()
+                    } else {
+                        format!("code {code}")
+                    };
                     println!("\n\x1b[31m[process exited: {msg}]\x1b[0m");
                     print!("\x1b[90mpress 's' to restart: \x1b[0m");
                     let _ = std::io::Write::flush(&mut std::io::stdout());

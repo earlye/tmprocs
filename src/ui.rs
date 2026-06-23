@@ -1,10 +1,10 @@
 use crate::app::{App, ProcStatus};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    Frame,
 };
 
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -62,9 +62,7 @@ fn draw_proc_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) -> 
 }
 
 fn draw_help_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
-    let help = Paragraph::new(
-        "↑/k up  ↓/j down  Enter focus  s start  x kill  q quit",
-    )
-    .style(Style::default().fg(Color::DarkGray));
+    let help = Paragraph::new("↑/k up  ↓/j down  Enter focus  s start  x kill  q quit")
+        .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, area);
 }

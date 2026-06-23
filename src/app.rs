@@ -25,11 +25,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
-        procs: Vec<Proc>,
-        bg_session: TmuxSession,
-        left_pane_id: String,
-    ) -> Self {
+    pub fn new(procs: Vec<Proc>, bg_session: TmuxSession, left_pane_id: String) -> Self {
         App {
             procs,
             selected: 0,
@@ -68,7 +64,10 @@ impl App {
         let new_right_id = if let Some(shown_idx) = self.procs.iter().position(|p| p.is_shown) {
             self.procs[shown_idx].is_shown = false;
             let right_id = self.right_pane_id.take();
-            let alive = right_id.as_deref().map(tmux::is_pane_alive).unwrap_or(false);
+            let alive = right_id
+                .as_deref()
+                .map(tmux::is_pane_alive)
+                .unwrap_or(false);
             if let (Some(right_id), true) = (right_id, alive) {
                 let shown_name = self.procs[shown_idx].name.clone();
                 tmux::swap_proc_pane(
@@ -107,15 +106,22 @@ impl App {
             if let Some(right_id) = self.right_pane_id.take() {
                 let window_name = self.bg_session.window_name_for(&name);
                 let wrapper_cmd = self.bg_session.wrapper_cmd_for(&name, &cmd)?;
-                let new_right_id = tmux::restart_shown_proc_pane(
+                match tmux::restart_shown_proc_pane(
                     &right_id,
                     &self.bg_session.session_name,
                     &window_name,
                     &wrapper_cmd,
                     &self.left_pane_id,
                     Some(50),
-                )?;
-                self.right_pane_id = Some(new_right_id);
+                ) {
+                    Ok(new_right_id) => {
+                        self.right_pane_id = Some(new_right_id);
+                    }
+                    Err(e) => {
+                        self.procs[idx].is_shown = false;
+                        return Err(e);
+                    }
+                }
             }
         } else {
             let window = self.bg_session.window_id(&name);
@@ -128,12 +134,12 @@ impl App {
     }
 
     /// Kill the selected process's child, leaving the wrapper pane open.
+    /// Status is not updated here; the next `refresh_status` tick will
+    /// observe the status file change and update it accurately.
     pub fn kill_selected(&mut self) -> Result<()> {
-        let idx = self.selected;
-        let name = self.procs[idx].name.clone();
+        let name = self.procs[self.selected].name.clone();
         let status_file = self.bg_session.status_file_for(&name);
         tmux::kill_child_in_wrapper(&status_file);
-        self.procs[idx].status = ProcStatus::Dead;
         Ok(())
     }
 
@@ -142,7 +148,11 @@ impl App {
             let status_file = self.bg_session.status_file_for(&self.procs[i].name);
             let content = std::fs::read_to_string(&status_file).unwrap_or_default();
             let alive = content.trim().starts_with("running");
-            self.procs[i].status = if alive { ProcStatus::Running } else { ProcStatus::Dead };
+            self.procs[i].status = if alive {
+                ProcStatus::Running
+            } else {
+                ProcStatus::Dead
+            };
         }
     }
 }

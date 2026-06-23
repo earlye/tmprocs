@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::process::Command;
 
 /// Manages process windows as hidden windows in the user's own tmux session,
@@ -25,12 +25,19 @@ impl TmuxSession {
         let wrapper_cmd = self.wrapper_cmd_for(name, shell_cmd)?;
         let output = Command::new("tmux")
             .args([
-                "new-window", "-d",
-                "-t", &self.session_name,
-                "-n", &window_name,
+                "new-window",
+                "-d",
+                "-t",
+                &self.session_name,
+                "-n",
+                &window_name,
                 &wrapper_cmd,
                 ";",
-                "set-window-option", "-t", &window_target, "remain-on-exit", "on",
+                "set-window-option",
+                "-t",
+                &window_target,
+                "remain-on-exit",
+                "on",
             ])
             .output()?;
         if !output.status.success() {
@@ -50,7 +57,13 @@ impl TmuxSession {
     pub fn cleanup(&self) -> Result<()> {
         // list-windows, filter by prefix, kill each
         let out = Command::new("tmux")
-            .args(["list-windows", "-t", &self.session_name, "-F", "#{window_name}"])
+            .args([
+                "list-windows",
+                "-t",
+                &self.session_name,
+                "-F",
+                "#{window_name}",
+            ])
             .output()?;
         if !out.status.success() {
             return Ok(()); // session may already be gone
@@ -58,7 +71,11 @@ impl TmuxSession {
         for wname in String::from_utf8(out.stdout)?.lines() {
             if wname.starts_with(&self.prefix) {
                 let _ = Command::new("tmux")
-                    .args(["kill-window", "-t", &format!("{}:{}", self.session_name, wname)])
+                    .args([
+                        "kill-window",
+                        "-t",
+                        &format!("{}:{}", self.session_name, wname),
+                    ])
                     .status();
             }
         }
@@ -76,7 +93,12 @@ impl TmuxSession {
     pub fn wrapper_cmd_for(&self, name: &str, shell_cmd: &str) -> Result<String> {
         let exe = std::env::current_exe()?;
         let status_file = self.status_file_for(name);
-        Ok(format!("{} wrap {} {}", exe.display(), status_file, shell_quote(shell_cmd)))
+        Ok(format!(
+            "{} wrap {} {}",
+            exe.display(),
+            status_file,
+            shell_quote(shell_cmd)
+        ))
     }
 }
 
@@ -87,10 +109,10 @@ fn shell_quote(s: &str) -> String {
 /// Kill the child process tracked by a wrapper status file.
 /// Sends SIGTERM to the child PID recorded as `running:<pid>`.
 pub fn kill_child_in_wrapper(status_file: &str) {
-    if let Ok(content) = std::fs::read_to_string(status_file) {
-        if let Some(pid_str) = content.trim().strip_prefix("running:") {
-            let _ = Command::new("kill").args(["-TERM", pid_str]).status();
-        }
+    if let Ok(content) = std::fs::read_to_string(status_file)
+        && let Some(pid_str) = content.trim().strip_prefix("running:")
+    {
+        let _ = Command::new("kill").args(["-TERM", pid_str]).status();
     }
 }
 
@@ -111,16 +133,28 @@ pub fn current_pane() -> Result<(String, String, String)> {
     if parts.len() != 3 {
         bail!("unexpected tmux display-message output: {s}");
     }
-    Ok((parts[0].to_string(), parts[1].to_string(), parts[2].to_string()))
+    Ok((
+        parts[0].to_string(),
+        parts[1].to_string(),
+        parts[2].to_string(),
+    ))
 }
 
 /// Join a process pane to the right of `left_pane_id`, returning the new right pane's ID.
 /// `max_left_cols`: if Some, resize the left pane to at most that width in the same chain.
-pub fn join_pane_right(src_window: &str, left_pane_id: &str, max_left_cols: Option<u16>) -> Result<String> {
+pub fn join_pane_right(
+    src_window: &str,
+    left_pane_id: &str,
+    max_left_cols: Option<u16>,
+) -> Result<String> {
     let mut args = vec![
-        "join-pane", "-h", "-d",
-        "-s", src_window,
-        "-t", left_pane_id,
+        "join-pane",
+        "-h",
+        "-d",
+        "-s",
+        src_window,
+        "-t",
+        left_pane_id,
     ];
     let cols_str;
     if let Some(cols) = max_left_cols {
@@ -129,7 +163,10 @@ pub fn join_pane_right(src_window: &str, left_pane_id: &str, max_left_cols: Opti
     }
     let out = Command::new("tmux").args(&args).output()?;
     if !out.status.success() {
-        bail!("tmux join-pane failed: {}", String::from_utf8_lossy(&out.stderr));
+        bail!(
+            "tmux join-pane failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
     let right_pane_id = rightmost_pane_in_window(left_pane_id)?;
     set_pane_remain_on_exit(&right_pane_id);
@@ -168,7 +205,6 @@ fn rightmost_pane_in_window(pane_id: &str) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("no panes found in window containing {pane_id}"))
 }
 
-
 /// Kill a dead shown pane, start a fresh window, join it, and resize — all in
 /// one tmux invocation to avoid intermediate repaints.
 pub fn restart_shown_proc_pane(
@@ -181,13 +217,31 @@ pub fn restart_shown_proc_pane(
 ) -> Result<String> {
     let window_target = format!("{session}:{window_name}");
     let mut args = vec![
-        "kill-pane", "-t", right_pane_id,
+        "kill-pane",
+        "-t",
+        right_pane_id,
         ";",
-        "new-window", "-d", "-t", session, "-n", window_name, shell_cmd,
+        "new-window",
+        "-d",
+        "-t",
+        session,
+        "-n",
+        window_name,
+        shell_cmd,
         ";",
-        "set-window-option", "-t", &window_target, "remain-on-exit", "on",
+        "set-window-option",
+        "-t",
+        &window_target,
+        "remain-on-exit",
+        "on",
         ";",
-        "join-pane", "-h", "-d", "-s", &window_target, "-t", left_pane_id,
+        "join-pane",
+        "-h",
+        "-d",
+        "-s",
+        &window_target,
+        "-t",
+        left_pane_id,
     ];
     let cols_str;
     if let Some(cols) = max_left_cols {
@@ -196,7 +250,10 @@ pub fn restart_shown_proc_pane(
     }
     let out = Command::new("tmux").args(&args).output()?;
     if !out.status.success() {
-        bail!("tmux restart failed: {}", String::from_utf8_lossy(&out.stderr));
+        bail!(
+            "tmux restart failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
     let right_pane_id = rightmost_pane_in_window(left_pane_id)?;
     set_pane_remain_on_exit(&right_pane_id);
@@ -216,9 +273,22 @@ pub fn swap_proc_pane(
     max_left_cols: Option<u16>,
 ) -> Result<String> {
     let mut args = vec![
-        "break-pane", "-d", "-s", right_pane_id, "-t", session, "-n", old_window_name,
+        "break-pane",
+        "-d",
+        "-s",
+        right_pane_id,
+        "-t",
+        session,
+        "-n",
+        old_window_name,
         ";",
-        "join-pane", "-h", "-d", "-s", new_window, "-t", left_pane_id,
+        "join-pane",
+        "-h",
+        "-d",
+        "-s",
+        new_window,
+        "-t",
+        left_pane_id,
     ];
     let cols_str;
     if let Some(cols) = max_left_cols {
@@ -234,7 +304,6 @@ pub fn swap_proc_pane(
     Ok(right_pane_id)
 }
 
-
 /// Check whether a pane (by ID, e.g. `%42`) has a live process.
 /// Only use this for pane IDs — not window targets, which can fall back
 /// to the current pane on some tmux versions.
@@ -248,10 +317,11 @@ pub fn is_pane_alive(pane_id: &str) -> bool {
     }
 }
 
-
 /// Move tmux focus to the given pane.
 pub fn focus_pane(pane_id: &str) -> Result<()> {
-    Command::new("tmux").args(["select-pane", "-t", pane_id]).status()?;
+    Command::new("tmux")
+        .args(["select-pane", "-t", pane_id])
+        .status()?;
     Ok(())
 }
 
@@ -270,4 +340,3 @@ pub fn kill_window(window: &str) -> Result<()> {
         .status()?;
     Ok(())
 }
-
