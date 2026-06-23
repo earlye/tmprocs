@@ -108,12 +108,23 @@ fn shell_quote(s: &str) -> String {
 
 /// Kill the child process tracked by a wrapper status file.
 /// Sends SIGTERM to the child PID recorded as `running:<pid>`.
-pub fn kill_child_in_wrapper(status_file: &str) {
-    if let Ok(content) = std::fs::read_to_string(status_file)
-        && let Some(pid_str) = content.trim().strip_prefix("running:")
-    {
-        let _ = Command::new("kill").args(["-TERM", pid_str]).status();
+/// Returns an error if the status file is missing/unreadable, the proc
+/// is not running, or the `kill` command fails.
+pub fn kill_child_in_wrapper(status_file: &str) -> Result<()> {
+    let content = std::fs::read_to_string(status_file)
+        .map_err(|e| anyhow::anyhow!("cannot read status file: {e}"))?;
+    let pid_str = content
+        .trim()
+        .strip_prefix("running:")
+        .ok_or_else(|| anyhow::anyhow!("process is not running"))?;
+    let status = Command::new("kill")
+        .args(["-TERM", pid_str])
+        .status()
+        .map_err(|e| anyhow::anyhow!("kill failed: {e}"))?;
+    if !status.success() {
+        bail!("kill exited with {status}");
     }
+    Ok(())
 }
 
 /// Get the current tmux session and window/pane we're running in.

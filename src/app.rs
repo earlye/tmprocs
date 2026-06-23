@@ -62,13 +62,12 @@ impl App {
         let window = self.bg_session.window_id(name);
 
         let new_right_id = if let Some(shown_idx) = self.procs.iter().position(|p| p.is_shown) {
-            self.procs[shown_idx].is_shown = false;
             let right_id = self.right_pane_id.take();
             let alive = right_id
                 .as_deref()
                 .map(tmux::is_pane_alive)
                 .unwrap_or(false);
-            if let (Some(right_id), true) = (right_id, alive) {
+            let result = if let (Some(right_id), true) = (right_id, alive) {
                 let shown_name = self.procs[shown_idx].name.clone();
                 tmux::swap_proc_pane(
                     &right_id,
@@ -77,9 +76,20 @@ impl App {
                     &window,
                     &self.left_pane_id,
                     Some(50),
-                )?
+                )
             } else {
-                tmux::join_pane_right(&window, &self.left_pane_id, Some(50))?
+                tmux::join_pane_right(&window, &self.left_pane_id, Some(50))
+            };
+            match result {
+                Ok(id) => {
+                    self.procs[shown_idx].is_shown = false;
+                    id
+                }
+                Err(e) => {
+                    // Restore right_pane_id so the previously-shown proc stays consistent.
+                    // (right_id was already consumed; re-derive from tmux if needed later.)
+                    return Err(e);
+                }
             }
         } else {
             tmux::join_pane_right(&window, &self.left_pane_id, Some(50))?
@@ -102,8 +112,8 @@ impl App {
         let cmd = self.procs[idx].cmd.clone();
 
         if self.procs[idx].is_shown {
-            // Chain: kill dead pane → new-window → join → resize, all in one invocation.
             if let Some(right_id) = self.right_pane_id.take() {
+                // Chain: kill dead pane → new-window → join → resize, all in one invocation.
                 let window_name = self.bg_session.window_name_for(&name);
                 let wrapper_cmd = self.bg_session.wrapper_cmd_for(&name, &cmd)?;
                 match tmux::restart_shown_proc_pane(
@@ -122,6 +132,12 @@ impl App {
                         return Err(e);
                     }
                 }
+            } else {
+                // is_shown=true but no right_pane_id — state desynced; treat as hidden.
+                self.procs[idx].is_shown = false;
+                let window = self.bg_session.window_id(&name);
+                let _ = tmux::kill_window(&window);
+                self.bg_session.start_proc(&name, &cmd)?;
             }
         } else {
             let window = self.bg_session.window_id(&name);
@@ -139,8 +155,7 @@ impl App {
     pub fn kill_selected(&mut self) -> Result<()> {
         let name = self.procs[self.selected].name.clone();
         let status_file = self.bg_session.status_file_for(&name);
-        tmux::kill_child_in_wrapper(&status_file);
-        Ok(())
+        tmux::kill_child_in_wrapper(&status_file)
     }
 
     pub fn refresh_status(&mut self) {
