@@ -107,11 +107,23 @@ fn tui_loop(
     app: &mut App,
     terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<()> {
-    let tick = Duration::from_millis(1000);
+    let status_interval = Duration::from_millis(1000);
+    let swap_throttle = Duration::from_millis(250);
+    let mut last_swap: Option<std::time::Instant> = None;
+    let mut nav_pending = false;
+
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
 
-        if event::poll(tick)? {
+        let timeout = if nav_pending {
+            last_swap
+                .map(|t| swap_throttle.saturating_sub(t.elapsed()))
+                .unwrap_or(Duration::ZERO)
+        } else {
+            status_interval
+        };
+
+        if event::poll(timeout)? {
             match event::read()? {
                 Event::Key(key) => match (key.modifiers, key.code) {
                     (_, KeyCode::Char('q')) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
@@ -119,19 +131,38 @@ fn tui_loop(
                     }
                     (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
                         app.move_up();
-                        if let Err(e) = app.show_selected() {
-                            eprintln!("error showing proc: {e}");
+                        let throttle_clear = last_swap.map_or(true, |t| t.elapsed() >= swap_throttle);
+                        if throttle_clear {
+                            if let Err(e) = app.show_selected() {
+                                eprintln!("error showing proc: {e}");
+                            }
+                            last_swap = Some(std::time::Instant::now());
+                            nav_pending = false;
+                        } else {
+                            nav_pending = true;
                         }
-                        terminal.clear()?;
                     }
                     (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
                         app.move_down();
-                        if let Err(e) = app.show_selected() {
-                            eprintln!("error showing proc: {e}");
+                        let throttle_clear = last_swap.map_or(true, |t| t.elapsed() >= swap_throttle);
+                        if throttle_clear {
+                            if let Err(e) = app.show_selected() {
+                                eprintln!("error showing proc: {e}");
+                            }
+                            last_swap = Some(std::time::Instant::now());
+                            nav_pending = false;
+                        } else {
+                            nav_pending = true;
                         }
-                        terminal.clear()?;
                     }
                     (_, KeyCode::Enter) => {
+                        if nav_pending {
+                            if let Err(e) = app.show_selected() {
+                                eprintln!("error showing proc: {e}");
+                            }
+                            last_swap = Some(std::time::Instant::now());
+                            nav_pending = false;
+                        }
                         if let Some(ref pane_id) = app.right_pane_id.clone() {
                             let _ = tmux::focus_pane(pane_id);
                         }
@@ -140,7 +171,6 @@ fn tui_loop(
                         if let Err(e) = app.restart_selected() {
                             eprintln!("error restarting proc: {e}");
                         }
-                        terminal.clear()?;
                     }
                     (_, KeyCode::Char('r')) => {
                         if let Err(e) = app.force_restart_selected() {
@@ -160,6 +190,12 @@ fn tui_loop(
                 }
                 _ => {}
             }
+        } else if nav_pending {
+            if let Err(e) = app.show_selected() {
+                eprintln!("error showing proc: {e}");
+            }
+            last_swap = Some(std::time::Instant::now());
+            nav_pending = false;
         } else {
             app.refresh_status();
         }
