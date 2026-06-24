@@ -117,8 +117,9 @@ pub fn kill_child_in_wrapper(status_file: &str) -> Result<()> {
         .trim()
         .strip_prefix("running:")
         .ok_or_else(|| anyhow::anyhow!("process is not running"))?;
+    let pgid = format!("-{pid_str}"); // negative = kill whole process group
     let status = Command::new("kill")
-        .args(["-TERM", pid_str])
+        .args(["-TERM", &pgid])
         .status()
         .map_err(|e| anyhow::anyhow!("kill failed: {e}"))?;
     if !status.success() {

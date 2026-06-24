@@ -69,6 +69,11 @@ fn main() -> Result<()> {
 
     run_tui(&mut app)?;
 
+    // Kill child process groups before tearing down panes/windows.
+    for p in &app.procs {
+        let status_file = app.bg_session.status_file_for(&p.name);
+        let _ = tmux::kill_child_in_wrapper(&status_file);
+    }
     // Kill the right pane that's currently joined into our window.
     if let Some(right_id) = &app.right_pane_id {
         let _ = tmux::kill_pane(right_id);
@@ -226,6 +231,7 @@ fn run_wrapper(status_file: &str, shell_cmd: &str) -> Result<()> {
                 .arg(shell_cmd)
                 .pre_exec(|| {
                     libc::signal(libc::SIGINT, libc::SIG_DFL);
+                    libc::setpgid(0, 0); // new process group; PGID == child PID
                     Ok(())
                 })
                 .spawn()?
