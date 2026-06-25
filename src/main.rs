@@ -232,6 +232,12 @@ fn run_wrapper(status_file: &str, shell_cmd: &str) -> Result<()> {
                 .pre_exec(|| {
                     libc::signal(libc::SIGINT, libc::SIG_DFL);
                     libc::setpgid(0, 0); // new process group; PGID == child PID
+                    // Make child the terminal foreground group so interactive apps
+                    // (emacs, psql, shells) can read stdin without getting SIGTTIN.
+                    let pgid = libc::getpid();
+                    let old_ttou = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+                    libc::tcsetpgrp(libc::STDIN_FILENO, pgid);
+                    libc::signal(libc::SIGTTOU, old_ttou);
                     Ok(())
                 })
                 .spawn()?
@@ -265,6 +271,14 @@ fn run_wrapper(status_file: &str, shell_cmd: &str) -> Result<()> {
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        // Reclaim terminal foreground group so the wrapper can read the 's' key.
+        unsafe {
+            let wrapper_pgid = libc::getpgrp();
+            let old_ttou = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+            libc::tcsetpgrp(libc::STDIN_FILENO, wrapper_pgid);
+            libc::signal(libc::SIGTTOU, old_ttou);
         }
 
         // Wait for 's' keypress to restart; ignore other keys.
