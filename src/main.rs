@@ -131,10 +131,11 @@ fn tui_loop(
         if event::poll(timeout)? {
             match event::read()? {
                 Event::Key(key) => match (key.modifiers, key.code) {
-                    (_, KeyCode::Char('q')) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+                    (KeyModifiers::NONE, KeyCode::Char('q'))
+                    | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
                         app.should_quit = true;
                     }
-                    (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
+                    (_, KeyCode::Up) | (KeyModifiers::NONE, KeyCode::Char('k')) => {
                         app.move_up();
                         let throttle_clear = last_swap.map_or(true, |t| t.elapsed() >= swap_throttle);
                         if throttle_clear {
@@ -147,7 +148,7 @@ fn tui_loop(
                             nav_pending = true;
                         }
                     }
-                    (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
+                    (_, KeyCode::Down) | (KeyModifiers::NONE, KeyCode::Char('j')) => {
                         app.move_down();
                         let throttle_clear = last_swap.map_or(true, |t| t.elapsed() >= swap_throttle);
                         if throttle_clear {
@@ -172,18 +173,18 @@ fn tui_loop(
                             let _ = tmux::focus_pane(pane_id);
                         }
                     }
-                    (_, KeyCode::Char('s')) => {
+                    (KeyModifiers::NONE, KeyCode::Char('s')) => {
                         if let Err(e) = app.restart_selected() {
                             eprintln!("error restarting proc: {e}");
                         }
                     }
-                    (_, KeyCode::Char('r')) => {
+                    (KeyModifiers::NONE, KeyCode::Char('r')) => {
                         if let Err(e) = app.force_restart_selected() {
                             eprintln!("error restarting proc: {e}");
                         }
                         terminal.clear()?;
                     }
-                    (_, KeyCode::Char('x')) => {
+                    (KeyModifiers::NONE, KeyCode::Char('x')) => {
                         if let Err(e) = app.kill_selected() {
                             eprintln!("error killing proc: {e}");
                         }
