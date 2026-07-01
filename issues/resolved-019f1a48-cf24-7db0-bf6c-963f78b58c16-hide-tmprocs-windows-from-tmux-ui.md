@@ -2,12 +2,30 @@
 
 ## Resolution
 
-Implemented the pane-level `@tmprocs_hidden` flag from "Suggested fix" section 1
-(`set_pane_hidden`, flipped at all four transition points: `start_proc`,
-`join_pane_right`, `restart_shown_proc_pane`, `swap_proc_pane`), plus a
-session-scoped `window-status-format`/`window-status-current-format` set at
-startup (`TmuxSession::hide_background_windows_from_status_line`), which fixes
-the always-visible status-bar leak.
+The first attempt implemented "Suggested fix" section 1 as written — a
+pane-level `@tmprocs_hidden` flag plus a session-wide conditional
+`window-status-format`/`window-status-current-format`
+(`#{?@tmprocs_hidden,,#I:#W#F}`). It looked correct under `list-windows -F`
+and `display-message -t <pane>`, but **did not actually hide anything in the
+real status bar** (verified live against tmux 3.5a).
+
+Root cause, confirmed empirically: tmux's built-in `status-format[0]`
+template references `window-status-format`/`-current-format` indirectly via
+`#{T:window-status-format}`. That indirection correctly threads per-window
+context for plain builtins (`#I`, `#W`), but loses it for anything nested
+one level deeper — a conditional or pattern-match inside the option's value
+always evaluates as if false, regardless of whether the flag was a pane
+option or a window option. `list-windows -F`/`display-message` don't go
+through this indirection, which is why they misleadingly showed the flag
+"working."
+
+Actual fix: drop the flag and the conditional entirely. Instead,
+**directly override `window-status-format`/`-current-format` to the empty
+string, per window**, on each background window tmprocs creates (in
+`start_proc` and in `swap_proc_pane`'s `break-pane`-recreated window). A
+static empty-string override has no nested expansion for the `#{T:...}`
+indirection to lose context on, so it renders correctly. No session-wide
+option is touched at all — only the windows tmprocs itself creates.
 
 Deliberately **out of scope**: the global `choose-tree -f` key rebind
 (section 3). Rebinding `s`/`w` in the prefix key table is global to the tmux
