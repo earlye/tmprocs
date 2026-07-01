@@ -15,8 +15,19 @@ use std::io;
 use std::time::Duration;
 
 fn main() -> Result<()> {
-    // Wrapper subcommand: tmprocs wrap <status_file> <shell_cmd>
     let cli_args: Vec<String> = std::env::args().collect();
+    match cli_args.get(1).map(|s| s.as_str()) {
+        Some("--version") | Some("-V") => {
+            println!("tmprocs {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Some("--help") | Some("-h") => {
+            print_help();
+            return Ok(());
+        }
+        _ => {}
+    }
+    // Wrapper subcommand: tmprocs wrap <status_file> <shell_cmd>
     if cli_args.get(1).map(|s| s.as_str()) == Some("wrap") {
         let status_file = cli_args
             .get(2)
@@ -87,6 +98,31 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_help() {
+    println!(
+        "tmprocs {}
+A tmux-integrated TUI process manager.
+
+USAGE:
+    tmprocs               Run in the current tmux session, using
+                           mprocs.yml/mprocs.yaml/tmprocs.yml/tmprocs.yaml
+                           from the current directory.
+
+OPTIONS:
+    -h, --help              Print this help message
+    -V, --version           Print version information
+
+KEYS (while running):
+    up/k, down/j            Move selection
+    enter                   Focus the selected process's pane
+    s                       Restart the selected process if it's dead
+    r                       Restart the selected process unconditionally
+    x                       Kill the selected process
+    q, ctrl+c               Quit",
+        env!("CARGO_PKG_VERSION")
+    );
 }
 
 fn run_tui(app: &mut App) -> Result<()> {
