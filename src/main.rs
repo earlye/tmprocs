@@ -40,6 +40,7 @@ fn main() -> Result<()> {
     }
 
     let bg_session = tmux::TmuxSession::new(session);
+    bg_session.hide_background_windows_from_status_line();
 
     // Start each process in the background session.
     let mut procs: Vec<Proc> = Vec::new();

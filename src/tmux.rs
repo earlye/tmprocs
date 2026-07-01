@@ -27,6 +27,9 @@ impl TmuxSession {
             .args([
                 "new-window",
                 "-d",
+                "-P",
+                "-F",
+                "#{pane_id}",
                 "-t",
                 &self.session_name,
                 "-n",
@@ -46,7 +49,22 @@ impl TmuxSession {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
+        if let Some(pane_id) = String::from_utf8_lossy(&output.stdout).lines().next() {
+            set_pane_hidden(pane_id, true);
+        }
         Ok(format!("{}:{}", self.session_name, window_name))
+    }
+
+    /// Set the status-line window format for this session so that panes
+    /// flagged `@tmprocs_hidden` (background process windows) don't show up
+    /// in the status bar. Scoped to this session only, not global.
+    pub fn hide_background_windows_from_status_line(&self) {
+        let format = "#{?@tmprocs_hidden,,#I:#W#F}";
+        for option in ["window-status-format", "window-status-current-format"] {
+            let _ = Command::new("tmux")
+                .args(["set-option", "-t", &self.session_name, option, format])
+                .status();
+        }
     }
 
     pub fn window_id(&self, name: &str) -> String {
@@ -182,6 +200,7 @@ pub fn join_pane_right(
     }
     let right_pane_id = rightmost_pane_in_window(left_pane_id)?;
     set_pane_remain_on_exit(&right_pane_id);
+    set_pane_hidden(&right_pane_id, false);
     Ok(right_pane_id)
 }
 
@@ -190,6 +209,23 @@ pub fn join_pane_right(
 fn set_pane_remain_on_exit(pane_id: &str) {
     let _ = Command::new("tmux")
         .args(["set-option", "-p", "-t", pane_id, "remain-on-exit", "on"])
+        .status();
+}
+
+/// Mark whether a pane should be hidden from the status line (and, with a
+/// matching `choose-tree -f` filter, from the expanded session chooser).
+/// Set at the pane level, like `remain-on-exit`, so it survives break-pane/
+/// join-pane regardless of which window the pane currently lives in.
+fn set_pane_hidden(pane_id: &str, hidden: bool) {
+    let _ = Command::new("tmux")
+        .args([
+            "set-option",
+            "-p",
+            "-t",
+            pane_id,
+            "@tmprocs_hidden",
+            if hidden { "1" } else { "0" },
+        ])
         .status();
 }
 
@@ -269,6 +305,7 @@ pub fn restart_shown_proc_pane(
     }
     let right_pane_id = rightmost_pane_in_window(left_pane_id)?;
     set_pane_remain_on_exit(&right_pane_id);
+    set_pane_hidden(&right_pane_id, false);
     Ok(right_pane_id)
 }
 
@@ -311,8 +348,11 @@ pub fn swap_proc_pane(
     if !out.status.success() {
         bail!("tmux swap failed: {}", String::from_utf8_lossy(&out.stderr));
     }
+    // break-pane keeps the same pane ID, just moves it to the background window.
+    set_pane_hidden(right_pane_id, true);
     let right_pane_id = rightmost_pane_in_window(left_pane_id)?;
     set_pane_remain_on_exit(&right_pane_id);
+    set_pane_hidden(&right_pane_id, false);
     Ok(right_pane_id)
 }
 
