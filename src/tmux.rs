@@ -19,6 +19,17 @@ impl TmuxSession {
 
     /// Start a process as a new (detached) window in the current session,
     /// wrapped by the tmprocs wrapper so the pane stays alive after exit.
+    ///
+    /// Also blanks this window's `window-status-format`/`-current-format`
+    /// (a per-window option override) so it doesn't show up in the status
+    /// line. A session-wide conditional (`#{?@some_flag,,...}`) doesn't
+    /// work here: tmux's default status-format[0] template references
+    /// these options indirectly via `#{T:window-status-format}`, and that
+    /// indirection loses per-window context for anything beyond the plain
+    /// `#I`/`#W` builtins — a nested conditional inside the option's value
+    /// always evaluates as if false. A direct per-window override of the
+    /// option's value to an empty string has no nested expansion to lose
+    /// context for, so it renders correctly.
     pub fn start_proc(&self, name: &str, shell_cmd: &str) -> Result<String> {
         let window_name = format!("{}{}", self.prefix, name);
         let window_target = format!("{}:{}", self.session_name, window_name);
@@ -38,6 +49,18 @@ impl TmuxSession {
                 &window_target,
                 "remain-on-exit",
                 "on",
+                ";",
+                "set-window-option",
+                "-t",
+                &window_target,
+                "window-status-format",
+                "",
+                ";",
+                "set-window-option",
+                "-t",
+                &window_target,
+                "window-status-current-format",
+                "",
             ])
             .output()?;
         if !output.status.success() {
@@ -284,6 +307,7 @@ pub fn swap_proc_pane(
     left_pane_id: &str,
     max_left_cols: Option<u16>,
 ) -> Result<String> {
+    let old_window_target = format!("{session}:{old_window_name}");
     let mut args = vec![
         "break-pane",
         "-d",
@@ -293,6 +317,18 @@ pub fn swap_proc_pane(
         session,
         "-n",
         old_window_name,
+        ";",
+        "set-window-option",
+        "-t",
+        &old_window_target,
+        "window-status-format",
+        "",
+        ";",
+        "set-window-option",
+        "-t",
+        &old_window_target,
+        "window-status-current-format",
+        "",
         ";",
         "join-pane",
         "-h",
